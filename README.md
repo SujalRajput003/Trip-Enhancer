@@ -23,6 +23,4 @@ Trip Enhancer is a Java-based travel planning application that:
 - Gson
 - HTTP Client API
 
-## Sample Output
 
-(Add screenshots here)
