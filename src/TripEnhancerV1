@@ -1,0 +1,293 @@
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.Scanner;
+
+import java.util.ArrayList;
+
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+
+import java.util.HashSet;
+
+public class TripEnhancerV1 {
+    public static void main(String[] args){
+        Scanner input = new Scanner(System.in);
+        System.out.print("Enter your city: ");
+        String city = input.nextLine();
+
+        String api = "your_api_key";
+
+        try{
+
+            String url = "https://api.geoapify.com/v1/geocode/search?text=" + city + "&apiKey=" + api;
+            // Step 1 getting city boundaries
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest georequest = HttpRequest.newBuilder().uri(URI.create(url)).build();
+            HttpResponse<String> geoResponse = client.send(georequest, HttpResponse.BodyHandlers.ofString());
+            String data = geoResponse.body();
+
+            JsonObject root = JsonParser.parseString(data).getAsJsonObject();
+            JsonArray features = root.getAsJsonArray("features");
+
+            if(features.size() == 0){
+                System.out.println("City not found");
+                return;
+            }
+
+            JsonObject firstfeature = features.get(0).getAsJsonObject();
+            JsonArray bbox = firstfeature.getAsJsonArray("bbox");
+
+            double west = bbox.get(0).getAsDouble();
+            double south = bbox.get(1).getAsDouble();
+            double east = bbox.get(2).getAsDouble();
+            double north = bbox.get(3).getAsDouble();
+
+            // Step 2 Getting attraction within city boundaries
+
+            String placesurl = "https://api.geoapify.com/v2/places"
+                    + "?categories=tourism,tourism.sights"
+                    + "&filter=rect:" + west + "," + south + "," + east+ ","+north + "&limit=300"
+                    + "&apiKey="
+                    + api;
+
+            HttpRequest placerequest = HttpRequest.newBuilder().uri(URI.create(placesurl)).build();
+            HttpResponse<String> placeResponse = client.send(placerequest, HttpResponse.BodyHandlers.ofString());
+            String placedata = placeResponse.body();
+
+            JsonObject placesRoot = JsonParser.parseString(placedata).getAsJsonObject();
+
+            JsonArray attractions = placesRoot.getAsJsonArray("features");
+
+            System.out.println("\nTourist Attractions:\n");
+
+            int count = 1;
+
+            ArrayList<Place> places = new ArrayList<>();
+
+            HashSet<String> seenNames = new HashSet<>();
+
+            for (JsonElement attraction : attractions) {
+
+                JsonObject attractionObj = attraction.getAsJsonObject();
+
+                JsonObject properties = attractionObj.getAsJsonObject("properties");
+
+                if(properties.has("name")){
+
+                    String name = properties.get("name").getAsString();
+
+                    String normalizedName = name.trim().toLowerCase();
+
+                    if(seenNames.contains(normalizedName)){
+                        continue;
+                    }
+
+                    seenNames.add(normalizedName);
+
+                    JsonArray categories = properties.getAsJsonArray("categories");
+
+                    String categoryText = categories.toString().toLowerCase();
+
+                    int score = RankingService.calculateScore(name, categoryText, properties);
+
+                    String lowerName = name.toLowerCase();
+
+                    if(lowerName.contains("fort"))
+                        score += 200;
+
+                    if(lowerName.contains("minar"))
+                        score += 200;
+
+                    if(lowerName.contains("temple"))
+                        score += 200;
+
+                    if(lowerName.contains("tomb"))
+                        score += 30;
+
+                    if(lowerName.contains("museum"))
+                        score += 150;
+
+                    if(lowerName.contains("gate"))
+                        score += 150;
+
+                    if(lowerName.contains("palace"))
+                        score += 150;
+
+                    if(lowerName.contains("dargah"))
+                        score += 120;
+
+                    if(score <= 0){
+                        continue;
+                    }
+
+
+
+                    /* if(categoryText.contains("artwork")
+                            || categoryText.contains("mural")
+                            || categoryText.contains("street_art")
+                            || categoryText.contains("statue")){
+                        continue;
+                    } */
+
+                    JsonObject geometry = attractionObj.getAsJsonObject("geometry");
+
+                    JsonArray coordinates = geometry.getAsJsonArray("coordinates");
+
+                    double longitude = coordinates.get(0).getAsDouble();
+
+                    double latitude = coordinates.get(1).getAsDouble();
+
+                    Place place = new Place(name, latitude, longitude);
+
+
+
+                    place.setScore(score);
+
+                    place.setCategory(categoryText);
+
+                    places.add(place);
+
+                    //System.out.println(count + ". " + place.getName());
+
+                    //System.out.println(count + ". " + place.getName() + " | Score: " + place.getScore());
+
+                    count++;
+                }
+            }
+
+            places.sort((p1, p2) -> Integer.compare(p2.getScore(), p1.getScore()));
+
+            System.out.println("\nRanked Attractions:\n");
+
+            count = 1;
+
+            for(Place place : places){
+
+                System.out.println(count + ". " + place.getName() + " | Score: " + place.getScore());
+
+                count++;
+            }
+
+            // STEP 3: User selects attractions
+
+            System.out.println();
+            System.out.print("Enter attraction numbers separated by spaces: ");
+
+            String choice = input.nextLine();
+
+            String[] selections = choice.split(" ");
+            ArrayList<Place> selectedPlaces = new ArrayList<>();
+
+            for (String selection : selections) {
+
+                int index = Integer.parseInt(selection);
+
+                selectedPlaces.add(places.get(index - 1));
+            }
+
+            System.out.println("\nSelected Attractions:\n");
+
+            for (Place place : selectedPlaces) {
+
+                System.out.println(place.getName() + " (" + place.getLatitude() + ", " + place.getLongitude() + ")");
+            }
+
+            System.out.println();
+
+            System.out.print("Enter your current location: ");
+            String currentLocationName = input.nextLine();
+
+            String encodedLocation = URLEncoder.encode(currentLocationName, StandardCharsets.UTF_8);
+
+            String currentLocationUrl =
+                    "https://api.geoapify.com/v1/geocode/search?text="
+                            + encodedLocation
+                            + "&apiKey="
+                            + api;
+
+            HttpRequest currentLocationRequest = HttpRequest.newBuilder().uri(URI.create(currentLocationUrl)).build();
+            HttpResponse<String> currentLocationResponse = client.send(currentLocationRequest, HttpResponse.BodyHandlers.ofString());
+            String currentLocationData = currentLocationResponse.body();
+
+            JsonObject currentRoot = JsonParser.parseString(currentLocationData).getAsJsonObject();
+            JsonArray currentFeatures = currentRoot.getAsJsonArray("features");
+
+            if(currentFeatures.size() == 0){
+                System.out.println("Location not found.");
+                return;
+            }
+
+            JsonObject currentFeature = currentFeatures.get(0).getAsJsonObject();
+
+            JsonObject currentProperties = currentFeature.getAsJsonObject("properties");
+
+            double currentLat = currentProperties.get("lat").getAsDouble();
+            double currentLon = currentProperties.get("lon").getAsDouble();
+
+            System.out.println("Current Latitude: " + currentLat);
+            System.out.println("Current Longitude: " + currentLon);
+
+            Place currentLocation =
+                    new Place(
+                            currentLocationName,
+                            currentLat,
+                            currentLon
+                    );
+
+            System.out.println("\nOptimized Route:\n");
+
+            int route = 1;
+
+            while (true) {
+
+                double shortestDistance = Double.MAX_VALUE;
+
+                Place closestPlace = null;
+
+                for (Place place : selectedPlaces) {
+
+                    if (place.isVisited()) {
+                        continue;
+                    }
+
+                    double distance =
+                            DistanceCalculator.calculateDistance(
+                                    currentLocation.getLatitude(),
+                                    currentLocation.getLongitude(),
+                                    place.getLatitude(),
+                                    place.getLongitude()
+                            );
+
+                    if (distance < shortestDistance) {
+                        shortestDistance = distance;
+                        closestPlace = place;
+                    }
+                }
+
+                if (closestPlace == null) {
+                    break;
+                }
+
+                System.out.println(route + ". " + closestPlace.getName() + " (" + String.format("%.2f", shortestDistance) + " km)");
+
+                closestPlace.setVisited(true);
+
+                currentLocation = closestPlace;
+
+                route++;
+            }
+
+        }
+        catch(Exception error){
+            error.printStackTrace();
+        }
+        input.close();;
+    }
+}
