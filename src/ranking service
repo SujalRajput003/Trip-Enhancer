@@ -1,0 +1,62 @@
+import com.google.gson.JsonObject;
+
+public class RankingService {
+
+    public static int calculateScore(
+            String name,
+            String categoryText,
+            JsonObject properties
+    ) {
+
+        int score = 0;
+
+        if(categoryText.contains("historic"))
+            score += 80;
+
+        if(categoryText.contains("monument"))
+            score += 70;
+
+        if(categoryText.contains("archaeological_site"))
+            score += 100;
+
+        if(categoryText.contains("castle"))
+            score += 90;
+
+        if(categoryText.contains("ruines"))
+            score += 60;
+
+        if(properties.has("wiki_and_media"))
+            score += 300;
+
+        if(properties.has("description"))
+            score += 50;
+
+        String lowerName = name.toLowerCase();
+
+        if(lowerName.contains("fort"))
+            score += 200;
+
+        if(lowerName.contains("minar"))
+            score += 200;
+
+        if(lowerName.contains("temple"))
+            score += 200;
+
+        if(lowerName.contains("museum"))
+            score += 150;
+
+        if(lowerName.contains("gate"))
+            score += 150;
+
+        if(lowerName.contains("palace"))
+            score += 150;
+
+        if(lowerName.contains("dargah"))
+            score += 120;
+
+        if(lowerName.contains("tomb"))
+            score += 30;
+
+        return score;
+    }
+}
